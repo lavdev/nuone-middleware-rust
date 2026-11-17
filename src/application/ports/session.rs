@@ -65,6 +65,22 @@ pub trait SessionRepository: Send + Sync {
     fn remove(&self, session_id: &str) -> Result<Option<Session>, SessionRepositoryError>;
 }
 
+#[derive(Debug, thiserror::Error)]
+pub enum SessionOperationLockError {
+    #[error("session operation lock is unavailable")]
+    Unavailable,
+}
+
+pub trait SessionOperationGuard: Send {}
+
+#[async_trait]
+pub trait SessionOperationLock: Send + Sync {
+    async fn acquire(
+        &self,
+        session_id: &str,
+    ) -> Result<Box<dyn SessionOperationGuard>, SessionOperationLockError>;
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SessionKeepAliveStatus {
     pub active: bool,
@@ -152,6 +168,16 @@ impl<T: SessionRepository + ?Sized> SessionRepository for Arc<T> {
     }
     fn remove(&self, session_id: &str) -> Result<Option<Session>, SessionRepositoryError> {
         (**self).remove(session_id)
+    }
+}
+
+#[async_trait]
+impl<T: SessionOperationLock + ?Sized> SessionOperationLock for Arc<T> {
+    async fn acquire(
+        &self,
+        session_id: &str,
+    ) -> Result<Box<dyn SessionOperationGuard>, SessionOperationLockError> {
+        (**self).acquire(session_id).await
     }
 }
 

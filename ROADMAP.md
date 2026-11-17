@@ -67,7 +67,7 @@ O Session Rust não guarda Socket nem handle do gateway; o adapter TCP mantém c
 ## Etapa 5 — Endpoints básicos e ciclo da sessão
 
 - [x] Implementar `/connect` e `/disconnect` com body text/plain criptografado e respostas text/plain conforme Java.
-- [ ] Implementar `/init` e `/menu`, incluindo suas diferenças de envelope/cripto.
+- [x] Implementar `/init` e `/menu`, incluindo suas diferenças de envelope/cripto e serialização por sessão.
 - [x] Preparar recebimento TCP por `sessionId` e configurar `NUONE_INIT_LOOP_TIMEOUT_MS` (padrão Java: 30000 ms).
 - [x] Implementar `/close/{sessionId}`, `/agent/status`, `GET /` e `GET /actuator/health`.
 - [ ] Validar todos os contratos HTTP (aliases, erros e formatos JSON) em testes de adapter.
@@ -75,15 +75,17 @@ O Session Rust não guarda Socket nem handle do gateway; o adapter TCP mantém c
 
 ### Ponto de teste alcançado
 
-O ciclo de autenticação e encerramento já pode ser exercitado: POST /connect, GET /agent/status e POST /disconnect contra um ERP de teste ou real. Não executei esse teste integrado. Os fluxos /init e /menu ainda não estão implementados, então este marco cobre apenas connect/status/disconnect.
+O fluxo HTTP principal já pode ser exercitado contra um ERP de teste ou real: POST /connect, POST /init, POST /menu para listagem/navegação/execução e POST /disconnect. A implementação foi compilada, mas esse teste integrado ainda não foi executado; ausência de teste não significa paridade comprovada.
 
 ## Etapa 6 — Traduções e execução de comandos
 
 - [x] Iniciar a porta PROTO → JSON com adaptação de MessageBox, Alert, Window/ModalWindow, Label/LabelActive e Button.
+- [x] Ampliar PROTO → JSON para WaitRun, refresh, window-close, atualização de grid, enable/visible/hide, SetText, foco, ClientData e eventos de status.
+- [x] Portar os handlers de componentes e eventos registrados no tradutor Java, incluindo campos, combos, checkbox, grid, imagem, caixa, toolbar, fonte, cor e ícone; compilação validada.
 
 `PROTO → JSON` é dependência de `/init` e do ramo que executa item em `/menu`; listagens de módulos têm formato próprio.
 
-- [ ] Implementar tradução JSON → PROTO em grupos pequenos de comandos observados.
+- [x] Implementar primeira versão da tradução JSON para PROTO cobrindo os ramos registrados no tradutor Java; compilação validada, paridade por testes pendente.
 - [ ] Implementar PROTO → JSON com dispatch por registries de componentes/eventos ou mecanismo equivalente claro.
 - [ ] Preservar serialização de comandos por sessão.
 - [ ] Implementar `/command`, incluindo materialização de links de download quando aplicável.
@@ -101,6 +103,7 @@ O ciclo de autenticação e encerramento já pode ser exercitado: POST /connect,
 
 - [ ] Portar configuração por ambiente e validação de startup.
 - [ ] Definir logging seguro, métricas, tracing e health checks equivalentes aos contratos operacionais. `GET /actuator/health` foi portado para o Gateway; métricas e outros endpoints Actuator continuam pendentes.
+- [x] Implementar logs de payload HTTP em modo de desenvolvimento, desligados por padrão e com sanitização recursiva de credenciais.
 - [ ] Implementar endpoint de diagnóstico protegido se permanecer no escopo.
 - [ ] Documentar execução local, variáveis, persistência e operação.
 

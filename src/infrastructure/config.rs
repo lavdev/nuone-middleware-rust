@@ -24,6 +24,7 @@ pub struct Settings {
     pub cipher_key: String,
     pub bot_version: String,
     pub mode_suffix: String,
+    pub development_mode: bool,
     pub init_loop_timeout: Duration,
     pub tcp: TcpSettings,
     pub legacy_ping: LegacyPingConfig,
@@ -82,6 +83,7 @@ impl Settings {
             cipher_key,
             bot_version: env::var("NUONE_BOT_VERSION").unwrap_or_else(|_| "7000".to_owned()),
             mode_suffix: env::var("NUONE_MODE_SUFFIX").unwrap_or_default(),
+            development_mode: parse_env("NUONE_DEVELOPMENT_MODE", false)?,
             init_loop_timeout: Duration::from_millis(parse_positive(
                 "NUONE_INIT_LOOP_TIMEOUT_MS",
                 30_000u64,

@@ -8,8 +8,8 @@ use crate::{
     adapters::{
         crypto::CryptoAdapter,
         http::{self, HttpState},
-        persistence::InMemorySessionRepository,
-        protocol::DeflatePackerAdapter,
+        persistence::{InMemorySessionOperationLock, InMemorySessionRepository},
+        protocol::{DeflatePackerAdapter, ProtoToJsonAdapter},
         tcp::{LegacyPingAgent, TcpBotGateway, TcpCommunication},
     },
     application::{
@@ -18,6 +18,8 @@ use crate::{
             agent_status::{AgentStatusService, AgentStatusUseCase},
             authentication::{AuthenticateUseCase, AuthenticationService},
             health_check::HealthCheckService,
+            init_erp::{InitErpService, InitErpUseCase},
+            menu_navigation::{MenuNavigationService, MenuNavigationUseCase},
             session_lifecycle::{
                 DisconnectSessionUseCase, ForceCloseSessionUseCase, SessionLifecycleService,
             },
@@ -52,6 +54,7 @@ pub async fn run() -> Result<(), Box<dyn Error + Send + Sync>> {
     ));
     let gateway = Arc::new(TcpBotGateway::new(tcp));
     let sessions = Arc::new(InMemorySessionRepository::default());
+    let session_locks = Arc::new(InMemorySessionOperationLock::default());
     let keep_alive = Arc::new(LegacyPingAgent::new(settings.legacy_ping));
 
     let authenticate: Arc<dyn AuthenticateUseCase> = Arc::new(AuthenticationService::new(
@@ -66,15 +69,35 @@ pub async fn run() -> Result<(), Box<dyn Error + Send + Sync>> {
     ));
     let disconnect: Arc<dyn DisconnectSessionUseCase> = lifecycle.clone();
     let force_close: Arc<dyn ForceCloseSessionUseCase> = lifecycle;
-    let agent_status: Arc<dyn AgentStatusUseCase> =
-        Arc::new(AgentStatusService::new(sessions, keep_alive.clone()));
+    let agent_status: Arc<dyn AgentStatusUseCase> = Arc::new(AgentStatusService::new(
+        sessions.clone(),
+        keep_alive.clone(),
+    ));
+    let proto_to_json = ProtoToJsonAdapter;
+    let init: Arc<dyn InitErpUseCase> = Arc::new(InitErpService::new(
+        gateway.clone(),
+        sessions.clone(),
+        session_locks.clone(),
+        proto_to_json,
+        settings.init_loop_timeout,
+    ));
+    let menu: Arc<dyn MenuNavigationUseCase> = Arc::new(MenuNavigationService::new(
+        gateway.clone(),
+        sessions.clone(),
+        session_locks,
+        ProtoToJsonAdapter,
+        settings.init_loop_timeout,
+    ));
     let status = HttpState::new(
         crypto_port,
         authenticate,
+        init,
+        menu,
         disconnect,
         force_close,
         agent_status,
         HealthCheckService::new(settings.bot_version, settings.mode_suffix),
+        settings.development_mode,
     );
 
     axum::serve(listener, http::router(status))

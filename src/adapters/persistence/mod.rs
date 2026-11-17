@@ -1,15 +1,61 @@
 //! Outbound persistence adapters.
 
-use std::{collections::HashMap, sync::Mutex};
+use std::{
+    collections::HashMap,
+    sync::{Mutex, Weak},
+};
+
+use async_trait::async_trait;
+use tokio::sync::{Mutex as AsyncMutex, OwnedMutexGuard};
 
 use crate::{
-    application::ports::session::{SessionRepository, SessionRepositoryError},
+    application::ports::session::{
+        SessionOperationGuard, SessionOperationLock, SessionOperationLockError, SessionRepository,
+        SessionRepositoryError,
+    },
     domain::model::Session,
 };
 
 #[derive(Default)]
 pub struct InMemorySessionRepository {
     sessions: Mutex<HashMap<String, Session>>,
+}
+
+#[derive(Default)]
+pub struct InMemorySessionOperationLock {
+    locks: Mutex<HashMap<String, Weak<AsyncMutex<()>>>>,
+}
+
+struct SessionOperationLockGuard {
+    _guard: OwnedMutexGuard<()>,
+}
+
+impl SessionOperationGuard for SessionOperationLockGuard {}
+
+#[async_trait]
+impl SessionOperationLock for InMemorySessionOperationLock {
+    async fn acquire(
+        &self,
+        session_id: &str,
+    ) -> Result<Box<dyn SessionOperationGuard>, SessionOperationLockError> {
+        let lock = {
+            let mut locks = self
+                .locks
+                .lock()
+                .map_err(|_| SessionOperationLockError::Unavailable)?;
+            locks.retain(|_, lock| lock.strong_count() > 0);
+            if let Some(lock) = locks.get(session_id).and_then(Weak::upgrade) {
+                lock
+            } else {
+                let lock = std::sync::Arc::new(AsyncMutex::new(()));
+                locks.insert(session_id.to_owned(), std::sync::Arc::downgrade(&lock));
+                lock
+            }
+        };
+        Ok(Box::new(SessionOperationLockGuard {
+            _guard: lock.lock_owned().await,
+        }))
+    }
 }
 
 impl SessionRepository for InMemorySessionRepository {
