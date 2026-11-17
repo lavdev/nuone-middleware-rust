@@ -1,0 +1,28 @@
+[package]
+name = "nuone-middleware"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85"
+description = "Nuone middleware ported to Rust"
+publish = false
+
+[dependencies]
+axum = { version = "0.8.9", features = ["json"] }
+aes = "0.8.4"
+async-trait = "0.1.92"
+base64 = "0.22.1"
+chrono = { version = "0.4.45", default-features = false, features = ["std"] }
+dotenvy = "0.15.7"
+flate2 = "1.1.10"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2.0.21"
+tokio = { version = "1.54.1", features = ["io-util", "macros", "net", "rt-multi-thread", "signal", "sync", "time"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3.23", features = ["env-filter", "fmt"] }
+
+[lints.rust]
+unsafe_code = "forbid"
+
+[lints.clippy]
+all = "warn"
