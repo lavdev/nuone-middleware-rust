@@ -1,6 +1,3 @@
-Warning: truncated output (original token count: 10489)
-Total output lines: 1013
-
 //! Outbound adapters for legacy protocol transformations.
 
 use std::io::{Read, Write};
@@ -436,7 +433,122 @@ impl ProtoToJsonPort for ProtoToJsonAdapter {
                         serde_json::json!({
                             "id": unit.message_id, "parent": unit.get(0),
                             "left": unit.get(3), "top": unit.get(4),
-                            "w…1489 tokens truncated…        }
+                            "width": unit.get(5), "height": unit.get(6),
+                            "key": unit.header == PROTO_W_COMBO_KEY, "data": data,
+                        }),
+                    ));
+                }
+                PROTO_W_SUBBROWSE => {
+                    let Ok(column_count) = unit.get(5).parse::<usize>() else {
+                        return Err(ProtoToJsonError::Translation);
+                    };
+                    let Some(column_values) = unit.values.get(6..6 + column_count) else {
+                        return Err(ProtoToJsonError::Translation);
+                    };
+                    let mut columns = Vec::with_capacity(column_count);
+                    for raw in column_values {
+                        let properties = raw
+                            .split(PROTO_W_SUBBROWSE_CONFIGURE_COLUMNS)
+                            .collect::<Vec<_>>();
+                        let Some(header) = properties.first() else {
+                            return Err(ProtoToJsonError::Translation);
+                        };
+                        let Some(alignment) = properties.get(1) else {
+                            return Err(ProtoToJsonError::Translation);
+                        };
+                        let Some(color) = properties.get(2) else {
+                            return Err(ProtoToJsonError::Translation);
+                        };
+                        let Some(width) = properties.get(3) else {
+                            return Err(ProtoToJsonError::Translation);
+                        };
+                        columns.push(serde_json::json!({
+                            "header": header, "alignment": alignment, "color": color,
+                            "width": width,
+                        }));
+                    }
+                    components.push(json_component(
+                        "Grid",
+                        serde_json::json!({
+                            "id": unit.message_id, "parent": unit.get(0),
+                            "left": unit.get(1), "top": unit.get(2),
+                            "width": unit.get(3), "height": unit.get(4),
+                            "GridColumn": columns,
+                        }),
+                    ));
+                }
+                PROTO_W_MGT | PROTO_W_IMAGE => {
+                    let name = if unit.header == PROTO_W_MGT {
+                        "TextArea"
+                    } else {
+                        "Image"
+                    };
+                    components.push(json_component(
+                        name,
+                        serde_json::json!({
+                            "id": unit.message_id, "parent": unit.get(0), "text": unit.get(1),
+                            "left": unit.get(2), "top": unit.get(3), "width": unit.get(4),
+                            "height": unit.get(5),
+                        }),
+                    ));
+                }
+                PROTO_W_BOX => components.push(json_component(
+                    "Box",
+                    serde_json::json!({
+                        "id": unit.message_id, "parent": unit.get(0), "left": unit.get(1),
+                        "top": unit.get(2), "width": unit.get(3), "height": unit.get(4),
+                    }),
+                )),
+                PROTO_W_TOOLBAR => components.push(json_component(
+                    "Toolbar",
+                    serde_json::json!({
+                        "parent": unit.get(0), "Button": toolbar_buttons(unit.values),
+                    }),
+                )),
+                PROTO_MSGRUN_START | PROTO_MSGRUN_STOP => {
+                    let started = unit.header == PROTO_MSGRUN_START;
+                    let mut data = serde_json::Map::new();
+                    data.insert("id".to_owned(), serde_json::json!(unit.message_id));
+                    if started {
+                        data.insert("title".to_owned(), serde_json::json!(unit.get(0)));
+                        data.insert("value".to_owned(), serde_json::json!(unit.get(1)));
+                    }
+                    data.insert("state".to_owned(), serde_json::json!(started));
+                    components.push(json_component("WaitRun", serde_json::Value::Object(data)));
+                }
+                PROTO_EVENT_REFRESHDATA => {
+                    let mut refreshed = Vec::new();
+                    let parent = unit.get(0);
+                    let first_id = unit.get(1);
+                    for pair in unit.values.get(1..).unwrap_or_default().chunks(2) {
+                        let Some(id) = pair.first() else { continue };
+                        if id.is_empty() && pair.len() == 1 {
+                            continue;
+                        }
+                        let value = pair.get(1).copied().unwrap_or_default();
+                        let is_grid_value = value.contains(PROTO_W_SUBBROWSE_SEPARATOR);
+                        if !is_grid_value && value.contains("??") {
+                            continue;
+                        }
+                        let value = if is_grid_value {
+                            value.replace(&format!("'{PROTO_W_SUBBROWSE_SEPARATOR}"), "'^")
+                        } else {
+                            value.to_owned()
+                        };
+                        let item_id = if id.is_empty() { first_id } else { *id };
+                        let item_value = match value.as_str() {
+                            "S" | ".T." => serde_json::json!(true),
+                            "N" | ".F." => serde_json::json!(false),
+                            _ => serde_json::json!(value),
+                        };
+                        refreshed.push(serde_json::json!({
+                            "parent": parent,
+                            "id": item_id,
+                            "value": item_value,
+                        }));
+                    }
+                    events.push(serde_json::json!({ "refresh": refreshed }));
+                }
                 PROTO_EVENT_CLOSED | PROTO_EVENT_MODAL_CLOSED => {
                     events.push(serde_json::json!({ "windowClose": unit.get(0) }));
                 }
@@ -724,13 +836,13 @@ fn toolbar_buttons(values: &[&str]) -> Vec<serde_json::Value> {
             4 => ("add", "Incluir"),
             5 => ("angles-left", "Primeiros"),
             6 => ("angle-left", "Anterior"),
-            7 => ("angle-right", "Pr�ximo"),
-            8 => ("angles-right", "�ltimos"),
+            7 => ("angle-right", "Próximo"),
+            8 => ("angles-right", "Últimos"),
             9 => ("eraser", "Apagar"),
             13 => ("magnifying-glass", "Pesquisar"),
-            14..=16 => ("book-bookmark", "Salvar Vers�o Atual"),
-            17 => ("bookmark", "Vers�o Anterior"),
-            18 => ("angles-right", "Pr�xima Vers�o"),
+            14..=16 => ("book-bookmark", "Salvar Versão Atual"),
+            17 => ("bookmark", "Versão Anterior"),
+            18 => ("angles-right", "Próxima Versão"),
             19 => ("file", "Anexos"),
             _ => continue,
         };
@@ -898,4 +1010,3 @@ mod tests {
         ));
     }
 }
-
